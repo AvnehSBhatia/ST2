@@ -1,0 +1,7 @@
+numpy
+scikit-learn
+vaderSentiment
+torch
+matplotlib
+flask
+openai
