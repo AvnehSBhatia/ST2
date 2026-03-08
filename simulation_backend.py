@@ -20,7 +20,7 @@ from openai import OpenAI
 from answer_bank import ANSWER_BANK_PATH, load_answer_bank
 from embedding_engine import EmbeddingEngine
 from kmean_graph import get_clustering_output
-from network import kmeans_auto_k, pick_recipients
+from network import kmeans_auto_k, normalize_vectors, pick_recipients
 from preprocessor import PREPROCESSOR_CHECKPOINT, load_preprocessor
 from run_full_pipeline import HYBRID_DATASET_PATH, NUM_AGENTS, get_100_agent_descriptions
 from test_pipeline import (
@@ -36,9 +36,11 @@ from train_answer_predictor import CHECKPOINT_PATH, load_checkpoint, predict_ans
 FEATHERLESS_BASE_URL = "https://api.featherless.ai/v1"
 FEATHERLESS_MODEL = "deepseek-ai/DeepSeek-V3.2"
 DEFAULT_FEATHERLESS_API_KEY = "rc_bdd22b5defe34bf473fb57147a3bff37fe6a5aaef9e34f193b5e0e6cd43d493b"
-SIMULATION_BATCH_SIZE = 16
+SIMULATION_BATCH_SIZE = 64
 TOP_K = 5
 SHARE_CHANCE_DENOMINATOR = 10
+PROGRESS_UPDATE_INTERVAL = 256
+GRAPH_UPDATE_INTERVAL = 1024
 DEFAULT_DATASET_PATH = Path(HYBRID_DATASET_PATH)
 
 
@@ -396,6 +398,7 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
             desc_embeddings = desc_embeddings.float().to(resources.device)
             persona_tensor = resources.preprocessor(desc_embeddings)
             personality_vectors = persona_tensor.detach().cpu().numpy().astype(np.float64)
+        normalized_personality_vectors = normalize_vectors(personality_vectors)
 
         labels, _, _ = kmeans_auto_k(personality_vectors)
         coords, _ = get_clustering_output(
@@ -518,32 +521,44 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
                         labels,
                         rng=rng,
                         exclude_uids=already_shared_to_me,
+                        unit_vectors=normalized_personality_vectors,
                     )
                     if recipients:
                         shares.append([uid, recipients])
                         share_lookup.add(uid)
 
             processed = end
+            is_final_batch = processed == len(uids)
+            should_publish_progress = is_final_batch or processed % PROGRESS_UPDATE_INTERVAL == 0
+            if not should_publish_progress:
+                continue
+
             stats, reaction_bar = compute_stats(agents, processed)
             history.append(build_history_point(agents, processed))
-            graph_links = [
-                {"source": int(source), "target": int(target)}
-                for source, recipients in shares
-                for target in recipients
-            ]
             percent = min(92, 18 + round(70 * processed / len(uids)))
             stage_text = f"Running model batch {processed}/{len(uids)}"
             analysis = build_analysis_snapshot(agents, stats, processed, len(uids), stage_text)
+            update_payload: dict[str, Any] = {
+                "status": "running",
+                "progress": {"stage": "predicting_responses", "processed": processed, "total": len(uids), "percent": percent},
+                "stats": stats,
+                "reaction_bar": reaction_bar,
+                "chart": make_chart_series(history),
+                "analysis": analysis,
+            }
+            should_update_graph = is_final_batch or processed % GRAPH_UPDATE_INTERVAL == 0
+            if should_update_graph:
+                graph_links = [
+                    {"source": int(source), "target": int(target)}
+                    for source, recipients in shares
+                    for target in recipients
+                ]
+                update_payload["graph"] = {"nodes": graph_nodes, "links": graph_links}
+                update_payload["shares"] = shares
+                update_payload["agents"] = agents
+
             job.update(
-                status="running",
-                progress={"stage": "predicting_responses", "processed": processed, "total": len(uids), "percent": percent},
-                stats=stats,
-                reaction_bar=reaction_bar,
-                chart=make_chart_series(history),
-                graph={"nodes": graph_nodes, "links": graph_links},
-                shares=shares,
-                agents=agents,
-                analysis=analysis,
+                **update_payload,
             )
 
         final_state = job.snapshot()

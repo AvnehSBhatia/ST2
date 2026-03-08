@@ -18,6 +18,7 @@ PERSONALITY_DIM = 384
 # K-means auto-k range
 K_MIN = 2
 K_MAX_FRAC = 5  # k_max = min(20, n // K_MAX_FRAC)
+SILHOUETTE_SAMPLE_SIZE = 1500
 
 # Representative sample fraction
 REPRESENTATIVE_FRAC = 0.10
@@ -84,9 +85,16 @@ def kmeans_auto_k(vectors: np.ndarray, k_range: tuple[int, int] | None = None) -
 
     best_score = -2.0
     best_km = None
+    sample_size = min(n, SILHOUETTE_SAMPLE_SIZE)
     for k in range(k_min, k_max + 1):
         km = KMeans(n_clusters=k, random_state=42, n_init=10).fit(vectors)
-        score = silhouette_score(vectors, km.labels_, metric="euclidean")
+        score = silhouette_score(
+            vectors,
+            km.labels_,
+            metric="euclidean",
+            sample_size=sample_size if sample_size < n else None,
+            random_state=42,
+        )
         if score > best_score:
             best_score = score
             best_km = km
@@ -167,19 +175,28 @@ def cosine_similarity_matrix(vectors: np.ndarray) -> np.ndarray:
     return unit @ unit.T
 
 
+def normalize_vectors(vectors: np.ndarray) -> np.ndarray:
+    """Return row-normalized vectors for cosine similarity lookups."""
+    vectors = np.asarray(vectors, dtype=np.float64)
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    return vectors / norms
+
+
 def combined_similarity_scores(
     sharer_idx: int,
     vectors: np.ndarray,
     labels: np.ndarray,
     same_cluster_bonus: float = SAME_CLUSTER_BONUS,
+    unit_vectors: np.ndarray | None = None,
 ) -> np.ndarray:
     """
     For sharer at index sharer_idx, compute combined similarity to all others (n,).
     Exclude self (set to -inf or -1 so it's never chosen). Others: cos_sim + bonus if same cluster.
     """
-    n = vectors.shape[0]
-    cos = cosine_similarity_matrix(vectors)
-    row = cos[sharer_idx].copy()
+    if unit_vectors is None:
+        unit_vectors = normalize_vectors(vectors)
+    row = unit_vectors @ unit_vectors[sharer_idx]
     row[sharer_idx] = -2.0
     same = labels == labels[sharer_idx]
     same[sharer_idx] = False
@@ -195,6 +212,7 @@ def pick_recipients(
     top_k: int = TOP_K_SIMILAR,
     rng: random.Random | None = None,
     exclude_uids: set | None = None,
+    unit_vectors: np.ndarray | None = None,
 ) -> list:
     """
     For the sharer at index sharer_idx, pick 1–3 recipients from top-K similar users.
@@ -207,7 +225,7 @@ def pick_recipients(
     if n <= 1:
         return []
     exclude_uids = exclude_uids or set()
-    scores = combined_similarity_scores(sharer_idx, vectors, labels)
+    scores = combined_similarity_scores(sharer_idx, vectors, labels, unit_vectors=unit_vectors)
     candidates = np.argsort(-scores)[:top_k]
     # Exclude anyone who already shared this media to the current sharer (no bidirectional)
     candidate_uids = [uids[i] for i in candidates if uids[i] not in exclude_uids]
@@ -260,6 +278,7 @@ def run_media_pipeline(
     # 2. Representatives
     rep_uids = select_representatives(uids, vectors, labels, centroids, fraction=fraction)
     uid_to_idx = {uid: i for i, uid in enumerate(uids)}
+    unit_vectors = normalize_vectors(vectors)
 
     # 3. Reactions and actions for representatives
     reactions = []
@@ -283,7 +302,7 @@ def run_media_pipeline(
         }
         idx = uid_to_idx[uid]
         recipients = pick_recipients(
-            idx, uids, vectors, labels, rng=rng, exclude_uids=already_shared_to_me
+            idx, uids, vectors, labels, rng=rng, exclude_uids=already_shared_to_me, unit_vectors=unit_vectors
         )
         if recipients:
             shares.append((uid, recipients))

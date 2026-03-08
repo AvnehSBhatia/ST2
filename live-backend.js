@@ -135,7 +135,10 @@
         if (typeof drawBeliefChart === 'function') {
             drawBeliefChart();
         }
-        scheduleNetworkRender();
+
+        if ((snapshot.status === 'completed' || snapshot.status === 'error') && typeof renderNetworkGraph === 'function') {
+            scheduleNetworkRender();
+        }
 
         if ((snapshot.status === 'completed' || snapshot.status === 'error') && !act3ShownByLiveUpdates && typeof showAct3 === 'function') {
             showAct3();
