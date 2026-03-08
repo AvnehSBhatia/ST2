@@ -1664,7 +1664,7 @@
                 onclick="document.getElementById('simulate-btn').click(); return false;">Swarm Console</a>
             <a href="#" style="color: var(--ink-mid); text-decoration: none; font-weight: 500; transition: color 0.2s;"
                 onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--ink-mid)'"
-                onclick="startSim(); setTimeout(showAct3, 1000); return false;">Results</a>
+                onclick="startSim(); return false;">Results</a>
             <a href="#" id="nav-auth-home" style="color: var(--purple); font-weight: 600; text-decoration: none;">Sign
                 In / Sign Up</a>
         </nav>
@@ -1672,7 +1672,7 @@
         <div class="logo-mark"><span class="s">SWARM</span></div>
         <h1 class="act1-headline">Drop a narrative<br />into the network.</h1>
         <p class="act1-sub">Paste an ad campaign, political speech, or video transcript. Watch it propagate through
-            10,000 simulated minds.</p>
+            5,000 simulated minds.</p>
         <div class="textarea-wrap">
             <textarea id="narrative" placeholder="Paste your campaign, ad copy, or transcript here..."></textarea>
         </div>
@@ -1702,7 +1702,7 @@
             <div class="globe-status" id="globe-status"></div>
         </div>
         <div id="scroll-blocks">
-            <div class="scroll-block" id="sb1">Swarm is profiling 10,000 agents across 6 trait dimensions...</div>
+            <div class="scroll-block" id="sb1">Swarm is profiling 5,000 agents across 6 trait dimensions...</div>
             <div class="scroll-block" id="sb2">Swarm is modeling cascade propagation across clusters...</div>
             <div class="scroll-block lit" id="sb3">Polarization index rising. 34% network exposure reached...</div>
         </div>
@@ -2311,7 +2311,16 @@
 
                     if (wt >= 1 && simRunning) {
                         simRunning = false;
-                        setTimeout(showAct3, 1000);
+                        const backendStillRunning = window.liveBackendRunActive === true
+                            && window.pipelineData
+                            && window.pipelineData.status !== 'completed'
+                            && window.pipelineData.status !== 'error';
+                        if (backendStillRunning) {
+                            status.classList.add('visible');
+                            status.textContent = 'SWARM: FINALIZING MODEL OUTPUT...';
+                        } else {
+                            setTimeout(showAct3, 1000);
+                        }
                     }
                 }
             } else {
@@ -2406,7 +2415,7 @@
             geo.attributes.color.needsUpdate = true;
 
             // status text
-            const msgs = ['INJECTING NARRATIVE INTO NETWORK...', 'SWARM: PROFILING 10,000 AGENTS...', 'SWARM: PROPAGATING BELIEF WAVES...', 'POLARIZATION INDEX: RISING...'];
+            const msgs = ['INJECTING NARRATIVE INTO NETWORK...', 'SWARM: PROFILING 5,000 AGENTS...', 'SWARM: PROPAGATING BELIEF WAVES...', 'POLARIZATION INDEX: RISING...'];
             status.classList.add('visible');
             let mi = 0;
             status.textContent = msgs[0];
@@ -2428,6 +2437,7 @@
         }
 
         function showAct3() {
+            if (act3.classList.contains('show')) return;
             act3.classList.add('show');
             act3.scrollIntoView({ behavior: 'smooth' });
             // Animate reaction bar after short delay

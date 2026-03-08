@@ -38,6 +38,7 @@ FEATHERLESS_MODEL = "deepseek-ai/DeepSeek-V3.2"
 DEFAULT_FEATHERLESS_API_KEY = "rc_bdd22b5defe34bf473fb57147a3bff37fe6a5aaef9e34f193b5e0e6cd43d493b"
 SIMULATION_BATCH_SIZE = 16
 TOP_K = 5
+SHARE_CHANCE_DENOMINATOR = 10
 DEFAULT_DATASET_PATH = Path(HYBRID_DATASET_PATH)
 
 
@@ -397,7 +398,14 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
             personality_vectors = persona_tensor.detach().cpu().numpy().astype(np.float64)
 
         labels, _, _ = kmeans_auto_k(personality_vectors)
-        coords, _ = get_clustering_output(uids, personality_vectors, labels=labels, shares=[], pca_random_state=42, cluster_pull_strength=0.55)
+        coords, _ = get_clustering_output(
+            uids,
+            personality_vectors,
+            labels=labels,
+            shares=[],
+            pca_random_state=42,
+            cluster_spacing_strength=1.1,
+        )
 
         agents: list[dict[str, Any]] = []
         for uid in uids:
@@ -475,7 +483,7 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
             for offset, (answer_text, sentiment_label, score, _counts) in enumerate(resolved):
                 uid = start + offset
                 like_value = sentiment_to_like_value(sentiment_label)
-                should_share = sentiment_label != "neutral" and rng.randint(1, 15) == 1
+                should_share = sentiment_label != "neutral" and rng.randint(1, SHARE_CHANCE_DENOMINATOR) == 1
                 action_name = sentiment_to_action(sentiment_label, should_share)
                 similarity_score = float(score)
                 agents[uid].update(

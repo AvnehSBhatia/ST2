@@ -18,6 +18,7 @@
     let eventSource = null;
     let networkRenderTimer = null;
     let act3ShownByLiveUpdates = false;
+    window.liveBackendRunActive = false;
 
     function formatNumber(value) {
         return Number(value || 0).toLocaleString();
@@ -43,6 +44,7 @@
             eventSource = null;
         }
         currentJobId = null;
+        window.liveBackendRunActive = false;
     }
 
     function resetPipelineDataForRun(narrative) {
@@ -50,7 +52,7 @@
             job_id: null,
             narrative: narrative,
             status: 'queued',
-            progress: { stage: 'queued', processed: 0, total: 100, percent: 0 },
+            progress: { stage: 'queued', processed: 0, total: 5000, percent: 0 },
             stats: { impressions: 0, likes: 0, dislikes: 0, shares: 0, comments: 0, nothing: 0 },
             reaction_bar: { liked: 0, disliked: 0, shared: 0, comment: 0, none: 100 },
             chart: {
@@ -92,11 +94,6 @@
         const analysis = snapshot.analysis || {};
         const stats = snapshot.stats || {};
         const rxn = snapshot.reaction_bar || {};
-
-        if (!act3ShownByLiveUpdates && typeof showAct3 === 'function') {
-            showAct3();
-            act3ShownByLiveUpdates = true;
-        }
 
         if (typeof status !== 'undefined' && analysis.globe_status) {
             status.classList.add('visible');
@@ -140,6 +137,11 @@
         }
         scheduleNetworkRender();
 
+        if ((snapshot.status === 'completed' || snapshot.status === 'error') && !act3ShownByLiveUpdates && typeof showAct3 === 'function') {
+            showAct3();
+            act3ShownByLiveUpdates = true;
+        }
+
         if (snapshot.status === 'completed' || snapshot.status === 'error') {
             hideDeployOverlay();
             clearLiveConnection();
@@ -181,6 +183,7 @@
 
     async function startBackendSimulation(narrative, options) {
         clearLiveConnection();
+        window.liveBackendRunActive = true;
         resetPipelineDataForRun(narrative);
         applySnapshot(window.pipelineData);
 
