@@ -96,15 +96,6 @@ def short_text(text: str, limit: int = 150) -> str:
     return clean[: limit - 1].rstrip() + "..."
 
 
-def parse_description_pool(text: str) -> list[str]:
-    chunks = []
-    for block in (text or "").replace("\r\n", "\n").split("\n\n"):
-        clean = " ".join(block.split()).strip()
-        if clean:
-            chunks.append(clean)
-    return chunks
-
-
 def make_chart_series(history: list[dict[str, float]]) -> dict[str, Any]:
     if not history:
         history = [{"progress": 0.0, "liked": 0.0, "neutral": 100.0, "disliked": 0.0}]
@@ -428,11 +419,10 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
         )
 
         resources = get_model_resources()
-        custom_descriptions = parse_description_pool(job.audience_description)
         descriptions = get_100_agent_descriptions(
             DEFAULT_DATASET_PATH,
             seed=seed,
-            custom_descriptions=custom_descriptions,
+            description_prefix=job.audience_description,
         )
         uids = list(range(len(descriptions)))
         initial_exposure_count = min(job.starting_nodes, len(uids))
