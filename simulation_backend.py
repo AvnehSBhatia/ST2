@@ -96,6 +96,15 @@ def short_text(text: str, limit: int = 150) -> str:
     return clean[: limit - 1].rstrip() + "..."
 
 
+def parse_description_pool(text: str) -> list[str]:
+    chunks = []
+    for block in (text or "").replace("\r\n", "\n").split("\n\n"):
+        clean = " ".join(block.split()).strip()
+        if clean:
+            chunks.append(clean)
+    return chunks
+
+
 def make_chart_series(history: list[dict[str, float]]) -> dict[str, Any]:
     if not history:
         history = [{"progress": 0.0, "liked": 0.0, "neutral": 100.0, "disliked": 0.0}]
@@ -110,12 +119,12 @@ def make_chart_series(history: list[dict[str, float]]) -> dict[str, Any]:
     }
 
 
-def compute_stats(agents: list[dict[str, Any]], processed: int) -> tuple[dict[str, Any], dict[str, Any]]:
+def compute_stats(agents: list[dict[str, Any]], processed: int, reached: int) -> tuple[dict[str, Any], dict[str, Any]]:
     relevant = [agent for agent in agents if agent.get("seen") and agent.get("sentiment_label")]
     counts = Counter(agent["action"] for agent in relevant)
     total = max(processed, 1)
     stats = {
-        "impressions": processed,
+        "impressions": reached,
         "likes": counts.get("LIKE", 0) + counts.get("LIKE_SHARE", 0),
         "dislikes": counts.get("DISLIKE", 0) + counts.get("DISLIKE_SHARE", 0),
         "shares": counts.get("LIKE_SHARE", 0) + counts.get("DISLIKE_SHARE", 0),
@@ -419,10 +428,11 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
         )
 
         resources = get_model_resources()
+        custom_descriptions = parse_description_pool(job.audience_description)
         descriptions = get_100_agent_descriptions(
             DEFAULT_DATASET_PATH,
             seed=seed,
-            description_prefix=job.audience_description,
+            custom_descriptions=custom_descriptions,
         )
         uids = list(range(len(descriptions)))
         initial_exposure_count = min(job.starting_nodes, len(uids))
@@ -606,8 +616,8 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
             if not should_publish_progress:
                 continue
 
-            stats, reaction_bar = compute_stats(agents, processed)
             current_total = max(len(discovered_order), processed)
+            stats, reaction_bar = compute_stats(agents, processed, current_total)
             history.append(build_history_point(agents, processed, current_total))
             pending_count = len(frontier_queue)
             progress_ratio = processed / max(processed + pending_count, 1)
@@ -648,7 +658,7 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
         except Exception:
             final_analysis = final_state["analysis"]
 
-        final_stats, final_reaction_bar = compute_stats(agents, processed)
+        final_stats, final_reaction_bar = compute_stats(agents, processed, len(discovered_order))
         job.update(
             status="completed",
             progress={"stage": "completed", "processed": processed, "total": processed, "percent": 100},

@@ -63,26 +63,35 @@ DEFAULT_MEDIA = (
 def get_100_agent_descriptions(
     dataset_path: Path = HYBRID_DATASET_PATH,
     seed: int | None = None,
-    description_prefix: str = "",
+    custom_descriptions: list[str] | None = None,
 ) -> list[str]:
     """
     Load exactly NUM_AGENTS agent descriptions.
 
+    If custom_descriptions is provided, sample from that pool for this run.
     If the dataset has enough descriptions, sample without replacement. Otherwise,
     reuse available descriptions with replacement so larger simulations can still run
     against a small seed dataset.
     """
     rng = random.Random(seed)
     descriptions: list[str] = []
+    custom_pool = [text.strip() for text in (custom_descriptions or []) if text and text.strip()]
+    if custom_pool:
+        if len(custom_pool) >= NUM_AGENTS:
+            descriptions = rng.sample(custom_pool, NUM_AGENTS)
+        else:
+            descriptions = rng.choices(custom_pool, k=NUM_AGENTS)
+
     if dataset_path.exists():
-        with dataset_path.open() as f:
-            data = json.load(f)
-        responses = data.get("responses", [])
-        candidates = [r["description"].strip() for r in responses if "description" in r]
-        if len(candidates) >= NUM_AGENTS:
-            descriptions = rng.sample(candidates, NUM_AGENTS)
-        elif candidates:
-            descriptions = rng.choices(candidates, k=NUM_AGENTS)
+        if not descriptions:
+            with dataset_path.open() as f:
+                data = json.load(f)
+            responses = data.get("responses", [])
+            candidates = [r["description"].strip() for r in responses if "description" in r]
+            if len(candidates) >= NUM_AGENTS:
+                descriptions = rng.sample(candidates, NUM_AGENTS)
+            elif candidates:
+                descriptions = rng.choices(candidates, k=NUM_AGENTS)
 
     # Fallback: if we still have fewer than NUM_AGENTS, pad with archetype-based placeholders.
     if len(descriptions) < NUM_AGENTS:
@@ -107,11 +116,7 @@ def get_100_agent_descriptions(
         while len(descriptions) < NUM_AGENTS:
             descriptions.append(f"Agent personality placeholder {len(descriptions)}.")
 
-    descriptions = descriptions[:NUM_AGENTS]
-    prefix = " ".join((description_prefix or "").split()).strip()
-    if prefix:
-        descriptions = [f"{prefix}\n\n{desc}" for desc in descriptions]
-    return descriptions
+    return descriptions[:NUM_AGENTS]
 
 
 def get_100_vectors(
