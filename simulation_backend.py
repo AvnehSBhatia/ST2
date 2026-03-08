@@ -119,12 +119,12 @@ def make_chart_series(history: list[dict[str, float]]) -> dict[str, Any]:
     }
 
 
-def compute_stats(agents: list[dict[str, Any]], processed: int, reached: int) -> tuple[dict[str, Any], dict[str, Any]]:
+def compute_stats(agents: list[dict[str, Any]], processed: int) -> tuple[dict[str, Any], dict[str, Any]]:
     relevant = [agent for agent in agents if agent.get("seen") and agent.get("sentiment_label")]
     counts = Counter(agent["action"] for agent in relevant)
     total = max(processed, 1)
     stats = {
-        "impressions": reached,
+        "impressions": processed,
         "likes": counts.get("LIKE", 0) + counts.get("LIKE_SHARE", 0),
         "dislikes": counts.get("DISLIKE", 0) + counts.get("DISLIKE_SHARE", 0),
         "shares": counts.get("LIKE_SHARE", 0) + counts.get("DISLIKE_SHARE", 0),
@@ -616,8 +616,8 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
             if not should_publish_progress:
                 continue
 
+            stats, reaction_bar = compute_stats(agents, processed)
             current_total = max(len(discovered_order), processed)
-            stats, reaction_bar = compute_stats(agents, processed, current_total)
             history.append(build_history_point(agents, processed, current_total))
             pending_count = len(frontier_queue)
             progress_ratio = processed / max(processed + pending_count, 1)
@@ -658,7 +658,7 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
         except Exception:
             final_analysis = final_state["analysis"]
 
-        final_stats, final_reaction_bar = compute_stats(agents, processed, len(discovered_order))
+        final_stats, final_reaction_bar = compute_stats(agents, processed)
         job.update(
             status="completed",
             progress={"stage": "completed", "processed": processed, "total": processed, "percent": 100},
