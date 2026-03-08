@@ -41,8 +41,8 @@ TOP_K = 5
 LIKE_SHARE_PROBABILITY = 1.0 / 4.5
 DISLIKE_SHARE_PROBABILITY = 1.0 / 10.0
 SHARED_RECIPIENT_INTERACTION_PROBABILITY = 0.5
-GRAPH_UPDATE_INTERVAL = SIMULATION_BATCH_SIZE
-PROGRESS_UPDATE_INTERVAL = SIMULATION_BATCH_SIZE
+PROGRESS_UPDATE_INTERVAL = 100
+GRAPH_UPDATE_INTERVAL = 100
 INITIAL_EXPOSURE_COUNT = 500
 DEFAULT_DATASET_PATH = Path(HYBRID_DATASET_PATH)
 
@@ -591,15 +591,13 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
 
                 if should_share and uid not in share_lookup:
                     already_shared_to_me = {int(sharer) for sharer, recipients in shares if uid in recipients}
-                    excluded_recipients = set(discovered_set)
-                    excluded_recipients.update(already_shared_to_me)
                     recipients = pick_recipients(
                         uid,
                         uids,
                         personality_vectors,
                         labels,
                         rng=rng,
-                        exclude_uids=excluded_recipients,
+                        exclude_uids=already_shared_to_me,
                         unit_vectors=normalized_personality_vectors,
                     )
                     if recipients:
