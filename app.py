@@ -23,10 +23,17 @@ def simulate() -> Response:
     narrative = str(payload.get("narrative", "")).strip()
     if not narrative:
         return jsonify({"error": "narrative is required"}), 400
+    audience_description = str(payload.get("audience_description", "")).strip()
+    starting_nodes = int(payload.get("starting_nodes", 500) or 500)
     seed = payload.get("seed")
     if seed is not None:
         seed = int(seed)
-    job = start_simulation(narrative=narrative, seed=seed)
+    job = start_simulation(
+        narrative=narrative,
+        audience_description=audience_description,
+        starting_nodes=starting_nodes,
+        seed=seed,
+    )
     return jsonify({"job_id": job.job_id})
 
 

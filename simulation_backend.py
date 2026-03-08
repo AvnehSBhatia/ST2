@@ -6,7 +6,7 @@ import random
 import threading
 import time
 import uuid
-from collections import Counter
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from queue import Empty, Queue
@@ -38,9 +38,12 @@ FEATHERLESS_MODEL = "deepseek-ai/DeepSeek-V3.2"
 DEFAULT_FEATHERLESS_API_KEY = "rc_bdd22b5defe34bf473fb57147a3bff37fe6a5aaef9e34f193b5e0e6cd43d493b"
 SIMULATION_BATCH_SIZE = 64
 TOP_K = 5
-SHARE_CHANCE_DENOMINATOR = 10
+LIKE_SHARE_PROBABILITY = 1.0 / 4.5
+DISLIKE_SHARE_PROBABILITY = 1.0 / 10.0
+SHARED_RECIPIENT_INTERACTION_PROBABILITY = 0.5
 PROGRESS_UPDATE_INTERVAL = 100
-GRAPH_UPDATE_INTERVAL = 1024
+GRAPH_UPDATE_INTERVAL = 100
+INITIAL_EXPOSURE_COUNT = 500
 DEFAULT_DATASET_PATH = Path(HYBRID_DATASET_PATH)
 
 
@@ -61,6 +64,21 @@ def sentiment_to_action(sentiment_label: str, should_share: bool) -> str:
     if sentiment_label in NEGATIVE_SENTIMENTS:
         return "DISLIKE_SHARE" if should_share else "DISLIKE"
     return "NOTHING"
+
+
+def should_interact(sentiment_label: str, received_via_share: bool, rng: random.Random) -> bool:
+    interactive_sentiments = set(POSITIVE_SENTIMENTS) | set(NEGATIVE_SENTIMENTS)
+    if received_via_share and sentiment_label in interactive_sentiments:
+        return rng.random() < SHARED_RECIPIENT_INTERACTION_PROBABILITY
+    return sentiment_label in interactive_sentiments
+
+
+def share_probability_for_sentiment(sentiment_label: str) -> float:
+    if sentiment_label in POSITIVE_SENTIMENTS:
+        return LIKE_SHARE_PROBABILITY
+    if sentiment_label in NEGATIVE_SENTIMENTS:
+        return DISLIKE_SHARE_PROBABILITY
+    return 0.0
 
 
 def display_action_from_action(action_name: str) -> str:
@@ -93,7 +111,7 @@ def make_chart_series(history: list[dict[str, float]]) -> dict[str, Any]:
 
 
 def compute_stats(agents: list[dict[str, Any]], processed: int) -> tuple[dict[str, Any], dict[str, Any]]:
-    relevant = [agent for agent in agents[:processed] if agent.get("sentiment_label")]
+    relevant = [agent for agent in agents if agent.get("seen") and agent.get("sentiment_label")]
     counts = Counter(agent["action"] for agent in relevant)
     total = max(processed, 1)
     stats = {
@@ -114,17 +132,17 @@ def compute_stats(agents: list[dict[str, Any]], processed: int) -> tuple[dict[st
     return stats, reaction_bar
 
 
-def build_history_point(agents: list[dict[str, Any]], processed: int) -> dict[str, float]:
-    relevant = [agent for agent in agents[:processed] if agent.get("sentiment_label")]
-    total = max(len(relevant), 1)
+def build_history_point(agents: list[dict[str, Any]], processed: int, total: int) -> dict[str, float]:
+    relevant = [agent for agent in agents if agent.get("seen") and agent.get("sentiment_label")]
+    reaction_total = max(len(relevant), 1)
     liked = sum(1 for agent in relevant if agent["sentiment_label"] in POSITIVE_SENTIMENTS)
     disliked = sum(1 for agent in relevant if agent["sentiment_label"] in NEGATIVE_SENTIMENTS)
-    neutral = total - liked - disliked
+    neutral = reaction_total - liked - disliked
     return {
-        "progress": processed / max(len(agents), 1),
-        "liked": round(100 * liked / total, 1),
-        "neutral": round(100 * neutral / total, 1),
-        "disliked": round(100 * disliked / total, 1),
+        "progress": processed / max(total, 1),
+        "liked": round(100 * liked / reaction_total, 1),
+        "neutral": round(100 * neutral / reaction_total, 1),
+        "disliked": round(100 * disliked / reaction_total, 1),
     }
 
 
@@ -135,7 +153,7 @@ def build_analysis_snapshot(
     total: int,
     stage_text: str,
 ) -> dict[str, Any]:
-    processed_agents = [agent for agent in agents[:processed] if agent.get("response_to_media")]
+    processed_agents = [agent for agent in agents if agent.get("seen") and agent.get("response_to_media")]
     responses = [short_text(agent["response_to_media"], limit=70) for agent in processed_agents if agent["response_to_media"]]
     positives = [text for agent, text in zip(processed_agents, responses) if agent["sentiment_label"] in POSITIVE_SENTIMENTS]
     negatives = [text for agent, text in zip(processed_agents, responses) if agent["sentiment_label"] in NEGATIVE_SENTIMENTS]
@@ -263,6 +281,8 @@ def get_model_resources() -> ModelResources:
 class SimulationJob:
     job_id: str
     narrative: str
+    audience_description: str
+    starting_nodes: int
     state: dict[str, Any]
     done: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
@@ -299,12 +319,18 @@ JOBS: dict[str, SimulationJob] = {}
 JOBS_LOCK = threading.Lock()
 
 
-def build_initial_state(narrative: str) -> dict[str, Any]:
+def build_initial_state(
+    narrative: str,
+    audience_description: str = "",
+    starting_nodes: int = INITIAL_EXPOSURE_COUNT,
+) -> dict[str, Any]:
     return {
         "job_id": "",
         "narrative": narrative,
+        "audience_description": audience_description,
+        "starting_nodes": starting_nodes,
         "status": "queued",
-        "progress": {"stage": "queued", "processed": 0, "total": NUM_AGENTS, "percent": 0},
+        "progress": {"stage": "queued", "processed": 0, "total": starting_nodes, "percent": 0},
         "stats": {"impressions": 0, "likes": 0, "dislikes": 0, "shares": 0, "comments": 0, "nothing": 0},
         "reaction_bar": {"liked": 0, "disliked": 0, "shared": 0, "comment": 0, "none": 100},
         "chart": make_chart_series([]),
@@ -339,11 +365,27 @@ def get_job(job_id: str) -> SimulationJob | None:
         return JOBS.get(job_id)
 
 
-def start_simulation(narrative: str, seed: int | None = None) -> SimulationJob:
+def start_simulation(
+    narrative: str,
+    audience_description: str = "",
+    starting_nodes: int = INITIAL_EXPOSURE_COUNT,
+    seed: int | None = None,
+) -> SimulationJob:
     job_id = uuid.uuid4().hex
-    state = build_initial_state(narrative)
+    starting_nodes = max(1, int(starting_nodes))
+    state = build_initial_state(
+        narrative,
+        audience_description=audience_description,
+        starting_nodes=starting_nodes,
+    )
     state["job_id"] = job_id
-    job = SimulationJob(job_id=job_id, narrative=narrative, state=state)
+    job = SimulationJob(
+        job_id=job_id,
+        narrative=narrative,
+        audience_description=audience_description,
+        starting_nodes=starting_nodes,
+        state=state,
+    )
     with JOBS_LOCK:
         JOBS[job_id] = job
     thread = threading.Thread(target=_run_simulation, args=(job, seed), daemon=True)
@@ -377,8 +419,13 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
         )
 
         resources = get_model_resources()
-        descriptions = get_100_agent_descriptions(DEFAULT_DATASET_PATH, seed=seed)
+        descriptions = get_100_agent_descriptions(
+            DEFAULT_DATASET_PATH,
+            seed=seed,
+            description_prefix=job.audience_description,
+        )
         uids = list(range(len(descriptions)))
+        initial_exposure_count = min(job.starting_nodes, len(uids))
 
         stage_text = "Encoding agent personas..."
         analysis = build_analysis_snapshot([], job.state["stats"], 0, len(descriptions), stage_text)
@@ -424,6 +471,8 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
                     "cluster": int(labels[uid]),
                     "sentiment_label": "",
                     "shared": False,
+                    "seen": False,
+                    "received_via_share": False,
                 }
             )
 
@@ -438,6 +487,8 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
                 "like_value": 0.0,
                 "similarity_score": 0.0,
                 "shared": False,
+                "seen": False,
+                "received_via_share": False,
                 "description": descriptions[uid],
                 "description_short": short_text(descriptions[uid]),
                 "response": "Analyzing narrative fit...",
@@ -445,11 +496,16 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
             }
             for uid in uids
         ]
+        initial_frontier = rng.sample(uids, initial_exposure_count) if initial_exposure_count else []
+        frontier_queue: deque[int] = deque(initial_frontier)
+        discovered_set = set(initial_frontier)
+        discovered_order = list(initial_frontier)
+
         job.update(
-            graph={"nodes": graph_nodes, "links": []},
-            agents=agents,
+            graph={"nodes": [graph_nodes[uid] for uid in discovered_order], "links": []},
+            agents=[agents[uid] for uid in discovered_order],
             analysis=build_analysis_snapshot(agents, job.state["stats"], 0, len(descriptions), "Clusters mapped. Running answer model..."),
-            progress={"stage": "clusters_ready", "processed": 0, "total": len(descriptions), "percent": 18},
+            progress={"stage": "clusters_ready", "processed": 0, "total": len(discovered_order), "percent": 18},
         )
 
         question = f"What is your opinion on this content: {job.narrative}"
@@ -463,13 +519,18 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
         history: list[dict[str, float]] = [{"progress": 0.0, "liked": 0.0, "neutral": 100.0, "disliked": 0.0}]
         shares: list[list[Any]] = []
         share_lookup: set[int] = set()
+        last_progress_publish = 0
+        last_graph_publish = 0
+        processed = 0
 
-        for start in range(0, len(uids), SIMULATION_BATCH_SIZE):
-            end = min(start + SIMULATION_BATCH_SIZE, len(uids))
-            batch_slice = slice(start, end)
+        while frontier_queue:
+            batch_uids: list[int] = []
+            while frontier_queue and len(batch_uids) < SIMULATION_BATCH_SIZE:
+                batch_uids.append(frontier_queue.popleft())
+            batch_tensor = persona_tensor[batch_uids]
             with torch.inference_mode():
                 predicted = predict_answer_embeddings_batch(
-                    persona_tensor[batch_slice],
+                    batch_tensor,
                     question_embedding,
                     resources.predictor,
                 )
@@ -483,11 +544,12 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
                 threshold=NEUTRAL_TIE_THRESHOLD,
             )
 
-            for offset, (answer_text, sentiment_label, score, _counts) in enumerate(resolved):
-                uid = start + offset
+            for uid, (answer_text, sentiment_label, score, _counts) in zip(batch_uids, resolved):
                 like_value = sentiment_to_like_value(sentiment_label)
-                should_share = sentiment_label != "neutral" and rng.randint(1, SHARE_CHANCE_DENOMINATOR) == 1
-                action_name = sentiment_to_action(sentiment_label, should_share)
+                received_via_share = bool(agents[uid].get("received_via_share"))
+                interacted = should_interact(sentiment_label, received_via_share, rng)
+                should_share = interacted and rng.random() < share_probability_for_sentiment(sentiment_label)
+                action_name = sentiment_to_action(sentiment_label, should_share) if interacted else "NOTHING"
                 similarity_score = float(score)
                 agents[uid].update(
                     {
@@ -498,6 +560,8 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
                         "response_to_media": answer_text,
                         "sentiment_label": sentiment_label,
                         "shared": should_share,
+                        "seen": True,
+                        "received_via_share": received_via_share,
                     }
                 )
                 graph_nodes[uid].update(
@@ -507,10 +571,13 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
                         "like_value": like_value,
                         "similarity_score": similarity_score,
                         "shared": should_share,
+                        "seen": True,
+                        "received_via_share": received_via_share,
                         "response": answer_text,
                         "response_short": short_text(answer_text),
                     }
                 )
+                processed += 1
 
                 if should_share and uid not in share_lookup:
                     already_shared_to_me = {int(sharer) for sharer, recipients in shares if uid in recipients}
@@ -526,40 +593,54 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
                     if recipients:
                         shares.append([uid, recipients])
                         share_lookup.add(uid)
+                        for recipient_uid in recipients:
+                            if recipient_uid not in discovered_set:
+                                discovered_set.add(recipient_uid)
+                                discovered_order.append(recipient_uid)
+                                frontier_queue.append(recipient_uid)
+                                agents[recipient_uid]["received_via_share"] = True
+                                graph_nodes[recipient_uid]["received_via_share"] = True
 
-            processed = end
-            is_final_batch = processed == len(uids)
-            should_publish_progress = is_final_batch or processed % PROGRESS_UPDATE_INTERVAL == 0
+            is_final_batch = len(frontier_queue) == 0
+            should_publish_progress = is_final_batch or (processed - last_progress_publish) >= PROGRESS_UPDATE_INTERVAL
             if not should_publish_progress:
                 continue
 
             stats, reaction_bar = compute_stats(agents, processed)
-            history.append(build_history_point(agents, processed))
-            percent = min(92, 18 + round(70 * processed / len(uids)))
-            stage_text = f"Running model batch {processed}/{len(uids)}"
-            analysis = build_analysis_snapshot(agents, stats, processed, len(uids), stage_text)
+            current_total = max(len(discovered_order), processed)
+            history.append(build_history_point(agents, processed, current_total))
+            pending_count = len(frontier_queue)
+            progress_ratio = processed / max(processed + pending_count, 1)
+            percent = min(96, 18 + round(74 * progress_ratio))
+            stage_text = f"Processing propagation wave {processed} reached | {pending_count} pending"
+            analysis = build_analysis_snapshot(agents, stats, processed, current_total, stage_text)
             update_payload: dict[str, Any] = {
                 "status": "running",
-                "progress": {"stage": "predicting_responses", "processed": processed, "total": len(uids), "percent": percent},
+                "progress": {"stage": "predicting_responses", "processed": processed, "total": current_total, "percent": percent},
                 "stats": stats,
                 "reaction_bar": reaction_bar,
                 "chart": make_chart_series(history),
                 "analysis": analysis,
             }
-            should_update_graph = is_final_batch or processed % GRAPH_UPDATE_INTERVAL == 0
+            should_update_graph = is_final_batch or (processed - last_graph_publish) >= GRAPH_UPDATE_INTERVAL
             if should_update_graph:
                 graph_links = [
                     {"source": int(source), "target": int(target)}
                     for source, recipients in shares
                     for target in recipients
                 ]
-                update_payload["graph"] = {"nodes": graph_nodes, "links": graph_links}
+                update_payload["graph"] = {
+                    "nodes": [graph_nodes[uid] for uid in discovered_order],
+                    "links": graph_links,
+                }
                 update_payload["shares"] = shares
-                update_payload["agents"] = agents
+                update_payload["agents"] = [agents[uid] for uid in discovered_order]
+                last_graph_publish = processed
 
             job.update(
                 **update_payload,
             )
+            last_progress_publish = processed
 
         final_state = job.snapshot()
         try:
@@ -567,10 +648,10 @@ def _run_simulation(job: SimulationJob, seed: int | None) -> None:
         except Exception:
             final_analysis = final_state["analysis"]
 
-        final_stats, final_reaction_bar = compute_stats(agents, len(agents))
+        final_stats, final_reaction_bar = compute_stats(agents, processed)
         job.update(
             status="completed",
-            progress={"stage": "completed", "processed": len(agents), "total": len(agents), "percent": 100},
+            progress={"stage": "completed", "processed": processed, "total": processed, "percent": 100},
             stats=final_stats,
             reaction_bar=final_reaction_bar,
             chart=make_chart_series(history),

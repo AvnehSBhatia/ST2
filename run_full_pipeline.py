@@ -63,6 +63,7 @@ DEFAULT_MEDIA = (
 def get_100_agent_descriptions(
     dataset_path: Path = HYBRID_DATASET_PATH,
     seed: int | None = None,
+    description_prefix: str = "",
 ) -> list[str]:
     """
     Load exactly NUM_AGENTS agent descriptions.
@@ -106,7 +107,11 @@ def get_100_agent_descriptions(
         while len(descriptions) < NUM_AGENTS:
             descriptions.append(f"Agent personality placeholder {len(descriptions)}.")
 
-    return descriptions[:NUM_AGENTS]
+    descriptions = descriptions[:NUM_AGENTS]
+    prefix = " ".join((description_prefix or "").split()).strip()
+    if prefix:
+        descriptions = [f"{prefix}\n\n{desc}" for desc in descriptions]
+    return descriptions
 
 
 def get_100_vectors(

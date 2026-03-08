@@ -195,7 +195,8 @@
             }
         }
 
-        textarea#narrative {
+        textarea#narrative,
+        textarea#audience-description {
             width: 100%;
             height: 160px;
             background: rgba(255, 255, 255, 0.7);
@@ -213,11 +214,51 @@
             box-shadow: 0 2px 16px rgba(0, 0, 0, .07);
         }
 
-        textarea#narrative::placeholder {
+        textarea#narrative::placeholder,
+        textarea#audience-description::placeholder {
             color: var(--ink-light);
         }
 
-        textarea#narrative:focus {
+        textarea#narrative:focus,
+        textarea#audience-description:focus {
+            border-color: rgba(107, 63, 160, .4);
+            box-shadow: 0 0 0 3px rgba(107, 63, 160, .1), 0 4px 20px rgba(0, 0, 0, .1);
+        }
+
+        .sim-config-row {
+            width: 100%;
+            max-width: 680px;
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            margin-bottom: 1.2rem;
+            z-index: 10;
+            position: relative;
+        }
+
+        .sim-config-row label {
+            font-size: 0.82rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--ink-mid);
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .sim-config-row input {
+            width: 150px;
+            padding: 0.9rem 1rem;
+            border-radius: 12px;
+            border: 1.5px solid rgba(0, 0, 0, .14);
+            background: rgba(255, 255, 255, 0.7);
+            font-family: 'Inter', system-ui, sans-serif;
+            font-size: 1rem;
+            outline: none;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 2px 16px rgba(0, 0, 0, .07);
+        }
+
+        .sim-config-row input:focus {
             border-color: rgba(107, 63, 160, .4);
             box-shadow: 0 0 0 3px rgba(107, 63, 160, .1), 0 4px 20px rgba(0, 0, 0, .1);
         }
@@ -866,6 +907,17 @@
         #tree-content.has-data {
             display: block;
             text-align: left;
+        }
+
+        #tree-agent-stats {
+            display: none;
+            margin-top: 1rem;
+            border-top: 1px solid rgba(0, 0, 0, 0.08);
+            padding-top: 1rem;
+        }
+
+        #tree-agent-stats.has-data {
+            display: block;
         }
 
         /* Tree structure elements */
@@ -1676,6 +1728,14 @@
         <div class="textarea-wrap">
             <textarea id="narrative" placeholder="Paste your campaign, ad copy, or transcript here..."></textarea>
         </div>
+        <div class="textarea-wrap">
+            <textarea id="audience-description"
+                placeholder="Optional: describe the audience/persona pool you want simulated. This paragraph is applied to each agent description."></textarea>
+        </div>
+        <div class="sim-config-row">
+            <label for="starting-nodes">Starting Nodes</label>
+            <input id="starting-nodes" type="number" min="1" max="5000" step="1" value="500" />
+        </div>
 
         <!-- File Upload -->
         <div class="upload-zone" id="upload-zone" style="max-width:680px;">
@@ -1702,7 +1762,7 @@
             <div class="globe-status" id="globe-status"></div>
         </div>
         <div id="scroll-blocks">
-            <div class="scroll-block" id="sb1">Swarm is profiling 5,000 agents across 6 trait dimensions...</div>
+            <div class="scroll-block" id="sb1">Swarm is seeding the initial agent set across the simulated network...</div>
             <div class="scroll-block" id="sb2">Swarm is modeling cascade propagation across clusters...</div>
             <div class="scroll-block lit" id="sb3">Polarization index rising. 34% network exposure reached...</div>
         </div>
@@ -1736,27 +1796,22 @@
                 <div class="stat-cell">
                     <div class="stat-cell-label">IMPRESSIONS</div>
                     <div class="stat-cell-val" id="cnt-impressions">0</div>
-                    <div class="stat-cell-delta">79% of network</div>
                 </div>
                 <div class="stat-cell">
                     <div class="stat-cell-label">LIKES</div>
                     <div class="stat-cell-val green" id="cnt-likes">0</div>
-                    <div class="stat-cell-delta pos" id="delta-likes">+31%</div>
                 </div>
                 <div class="stat-cell">
                     <div class="stat-cell-label">DISLIKES</div>
                     <div class="stat-cell-val red" id="cnt-dislikes">0</div>
-                    <div class="stat-cell-delta neg">-16%</div>
                 </div>
                 <div class="stat-cell">
                     <div class="stat-cell-label">SHARES</div>
                     <div class="stat-cell-val blue" id="cnt-shares">0</div>
-                    <div class="stat-cell-delta">17% pass-on</div>
                 </div>
                 <div class="stat-cell">
                     <div class="stat-cell-label">COMMENTS</div>
                     <div class="stat-cell-val" id="cnt-comments">0</div>
-                    <div class="stat-cell-delta">8% engagement</div>
                 </div>
             </div>
             <!-- Reaction breakdown bar -->
@@ -1852,6 +1907,7 @@
                     <div id="network-tree-panel">
                         <div class="tree-header">Agent Propagation Tree</div>
                         <div id="tree-content">Click a node in the 3D network to view its propagation path.</div>
+                        <div id="tree-agent-stats"></div>
                     </div>
                 </div>
             </div>
@@ -2415,7 +2471,13 @@
             geo.attributes.color.needsUpdate = true;
 
             // status text
-            const msgs = ['INJECTING NARRATIVE INTO NETWORK...', 'SWARM: PROFILING 5,000 AGENTS...', 'SWARM: PROPAGATING BELIEF WAVES...', 'POLARIZATION INDEX: RISING...'];
+            const selectedStartingNodes = Math.max(1, Math.min(5000, Math.round(Number((document.getElementById('starting-nodes') || {}).value || 500))));
+            const msgs = [
+                'INJECTING NARRATIVE INTO NETWORK...',
+                `SWARM: SEEDING ${selectedStartingNodes.toLocaleString()} INITIAL AGENTS...`,
+                'SWARM: PROPAGATING SHARE WAVES...',
+                'POLARIZATION INDEX: RISING...'
+            ];
             status.classList.add('visible');
             let mi = 0;
             status.textContent = msgs[0];
@@ -2559,6 +2621,7 @@
             const popup = document.createElement('div');
             popup.className = 'network-popup';
             cont.appendChild(popup);
+            const defaultTreeText = 'Click a node in the 3D network to view its propagation path.';
 
             const W = cont.clientWidth || 900;
             const H = cont.clientHeight || 480;
@@ -2605,7 +2668,7 @@
             const lineMat = new THREE.LineBasicMaterial({
                 color: 0xffffff,
                 transparent: true,
-                opacity: 0.08,
+                opacity: 0.28,
                 blending: THREE.AdditiveBlending
             });
 
@@ -2613,7 +2676,9 @@
             const usePipelineGraph = graph && graph.nodes && graph.nodes.length > 0;
             const nodesData = [];
             const nodeIdToIndex = {};
+            const nodeById = {};
             const scale = 55;
+            networkLinks = [];
 
             if (usePipelineGraph) {
                 // Use a deterministic random layout for readability while preserving
@@ -2668,6 +2733,7 @@
                     networkNodes.push(mesh);
                     nodesData.push(pos);
                     nodeIdToIndex[n.id] = i;
+                    nodeById[n.id] = mesh;
                 }
                 for (let k = 0; k < gLinks.length; k++) {
                     const L = gLinks[k];
@@ -2676,7 +2742,10 @@
                     if (i != null && j != null && nodesData[i] && nodesData[j]) {
                         const pts = [nodesData[i], nodesData[j]];
                         const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
-                        starGroup.add(new THREE.Line(lineGeo, lineMat));
+                        const line = new THREE.Line(lineGeo, lineMat.clone());
+                        line.userData = { sourceId: L.source, targetId: L.target };
+                        starGroup.add(line);
+                        networkLinks.push({ sourceId: L.source, targetId: L.target, line });
                     }
                 }
             } else {
@@ -2711,6 +2780,7 @@
                     starGroup.add(mesh);
                     networkNodes.push(mesh);
                     nodesData.push(pos);
+                    nodeById[i] = mesh;
                 }
                 for (let i = 0; i < nNodes; i++) {
                     let connections = 0;
@@ -2719,10 +2789,58 @@
                         if (dist < 45 && connections < 8) {
                             const pts = [nodesData[i], nodesData[j]];
                             const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
-                            starGroup.add(new THREE.Line(lineGeo, lineMat));
+                            const line = new THREE.Line(lineGeo, lineMat.clone());
+                            line.userData = { sourceId: i, targetId: j };
+                            starGroup.add(line);
+                            networkLinks.push({ sourceId: i, targetId: j, line });
                             connections++;
                         }
                     }
+                }
+            }
+
+            function resetGraphVisibility() {
+                networkNodes.forEach((node) => { node.visible = true; });
+                networkLinks.forEach((entry) => { entry.line.visible = true; });
+            }
+
+            function showConnectedChain(rootId) {
+                const visibleIds = new Set([rootId]);
+                const queue = [rootId];
+                while (queue.length > 0) {
+                    const currentId = queue.shift();
+                    for (const entry of networkLinks) {
+                        if (entry.sourceId === currentId && !visibleIds.has(entry.targetId)) {
+                            visibleIds.add(entry.targetId);
+                            queue.push(entry.targetId);
+                        }
+                        if (entry.targetId === currentId && !visibleIds.has(entry.sourceId)) {
+                            visibleIds.add(entry.sourceId);
+                            queue.push(entry.sourceId);
+                        }
+                    }
+                }
+
+                networkNodes.forEach((node) => {
+                    node.visible = visibleIds.has(node.userData.id);
+                });
+                networkLinks.forEach((entry) => {
+                    entry.line.visible = visibleIds.has(entry.sourceId) && visibleIds.has(entry.targetId);
+                });
+            }
+
+            function resetSelection() {
+                resetGraphVisibility();
+                popup.classList.remove('show');
+                const treePanel = document.getElementById('tree-content');
+                const statsPanel = document.getElementById('tree-agent-stats');
+                if (treePanel) {
+                    treePanel.classList.remove('has-data');
+                    treePanel.innerHTML = defaultTreeText;
+                }
+                if (statsPanel) {
+                    statsPanel.classList.remove('has-data');
+                    statsPanel.innerHTML = '';
                 }
             }
 
@@ -2763,26 +2881,15 @@
             cont.addEventListener('click', (e) => {
                 if (hoveredObj) {
                     const d = hoveredObj.userData;
+                    showConnectedChain(d.id);
                     const rMap = { 'liked': 'Liked', 'disliked': 'Disliked', 'neutral': 'Neutral/Indifferent', 'shared': 'Shared', 'didnt': 'No Interaction', 'none': 'No Interaction' };
                     const likeVal = d.like_value != null ? Number(d.like_value).toFixed(2) : '';
                     const actionLabel = d.action != null ? String(d.action).replace(/_/g, ' ') : (rMap[d.reaction] || d.reaction);
-                    popup.innerHTML = `
-                        <div style="font-weight:600;margin-bottom:8px;border-bottom:1px solid #eee;padding-bottom:4px">Agent #${d.id}</div>
-                        <div class="stat-row"><span class="stat-label">Action:</span><span class="stat-val" style="color:${d.reaction === 'liked' ? 'var(--green)' : 'inherit'}">${actionLabel}</span></div>
-                        <div class="stat-row"><span class="stat-label">Shared:</span><span class="stat-val">${d.shared ? 'Yes' : 'No'}</span></div>
-                        ${likeVal !== '' ? `<div class="stat-row"><span class="stat-label">Like value:</span><span class="stat-val">${likeVal}</span></div>` : ''}
-                        <div class="stat-row"><span class="stat-label">Similarity:</span><span class="stat-val">${d.influence}%</span></div>
-                        ${d.description ? `<div class="stat-row" style="margin-top:6px;font-size:0.7rem;color:#666"><span class="stat-label">Description:</span><span class="stat-val" style="display:block;margin-top:2px">${d.description}</span></div>` : ''}
-                        ${d.response ? `<div class="stat-row" style="margin-top:4px;font-size:0.7rem;color:#666"><span class="stat-label">Response:</span><span class="stat-val" style="display:block;margin-top:2px">${d.response}</span></div>` : ''}
-                    `;
-
-                    const rect = cont.getBoundingClientRect();
-                    popup.style.left = (e.clientX - rect.left + 15) + 'px';
-                    popup.style.top = (e.clientY - rect.top + 15) + 'px';
-                    popup.classList.add('show');
+                    popup.classList.remove('show');
 
                     // Propagation tree: from pipelineData.shares when available, else random
                     const treePanel = document.getElementById('tree-content');
+                    const statsPanel = document.getElementById('tree-agent-stats');
                     if (treePanel) {
                         treePanel.classList.add('has-data');
                         const rMapTree = { 'liked': 'Liked', 'disliked': 'Disliked', 'neutral': 'Neutral', 'shared': 'Shared', 'didnt': 'Ignored', 'none': 'Ignored' };
@@ -2828,8 +2935,23 @@
                         treePanel.innerHTML = treeHTML;
                         treeScale = 1; treeX = 0; treeY = 0;
                     }
+                    if (statsPanel) {
+                        statsPanel.classList.add('has-data');
+                        statsPanel.innerHTML = `
+                            <div style="font-weight:700;margin-bottom:10px;color:var(--ink-mid);text-transform:uppercase;letter-spacing:.05em;font-size:.78rem;">Agent Stats</div>
+                            <div style="display:grid;gap:8px;font-size:.82rem;color:var(--ink);">
+                                <div><strong>Agent #${d.id}</strong></div>
+                                <div><strong>Action:</strong> ${actionLabel}</div>
+                                <div><strong>Shared:</strong> ${d.shared ? 'Yes' : 'No'}</div>
+                                ${likeVal !== '' ? `<div><strong>Like value:</strong> ${likeVal}</div>` : ''}
+                                <div><strong>Similarity:</strong> ${d.influence}%</div>
+                                ${d.description ? `<div><strong>Description:</strong><div style="margin-top:4px;color:var(--ink-light);line-height:1.45">${d.description}</div></div>` : ''}
+                                ${d.response ? `<div><strong>Response:</strong><div style="margin-top:4px;color:var(--ink-light);line-height:1.45">${d.response}</div></div>` : ''}
+                            </div>
+                        `;
+                    }
                 } else {
-                    popup.classList.remove('show');
+                    resetSelection();
                 }
             });
 
@@ -2840,10 +2962,14 @@
                 networkReq = requestAnimationFrame(tick);
                 if (networkControls) networkControls.update();
 
-                // Constant 3D Multi-axis Movement
-                starGroup.rotation.y += 0.0012;
-                starGroup.rotation.x += 0.0004;
-                starGroup.rotation.z -= 0.0003;
+                // Slow the idle rotation as the camera zooms in so close inspection is easier.
+                const zoomDistance = networkControls
+                    ? networkCamera.position.distanceTo(networkControls.target)
+                    : networkCamera.position.length();
+                const rotationScale = Math.max(0.12, Math.min(1, zoomDistance / 450));
+                starGroup.rotation.y += 0.0012 * rotationScale;
+                starGroup.rotation.x += 0.0004 * rotationScale;
+                starGroup.rotation.z -= 0.0003 * rotationScale;
 
                 networkRenderer.render(networkScene, networkCamera);
             }
@@ -2894,6 +3020,10 @@
             act2.classList.remove('visible');
             act1.style.display = '';
             document.getElementById('narrative').value = '';
+            const audienceDescriptionEl = document.getElementById('audience-description');
+            if (audienceDescriptionEl) audienceDescriptionEl.value = '';
+            const startingNodesEl = document.getElementById('starting-nodes');
+            if (startingNodesEl) startingNodesEl.value = '500';
             fileInput.value = '';
             uploadFilename.textContent = '';
             uploadFilename.style.display = 'none';

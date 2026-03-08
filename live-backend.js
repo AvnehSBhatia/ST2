@@ -4,6 +4,8 @@
     const baseStartSim = typeof startSim === 'function' ? startSim : null;
     const simulateBtn = document.getElementById('simulate-btn');
     const narrativeInput = document.getElementById('narrative');
+    const audienceDescriptionInput = document.getElementById('audience-description');
+    const startingNodesInput = document.getElementById('starting-nodes');
     const fileInputEl = document.getElementById('file-input');
     const deployBtn = document.getElementById('btn-deploy');
     const deployInput = document.getElementById('media-injection');
@@ -48,12 +50,18 @@
         window.liveBackendRunActive = false;
     }
 
-    function resetPipelineDataForRun(narrative) {
+    function getStartingNodes() {
+        const raw = startingNodesInput ? Number(startingNodesInput.value) : 500;
+        if (!Number.isFinite(raw)) return 500;
+        return Math.max(1, Math.min(5000, Math.round(raw)));
+    }
+
+    function resetPipelineDataForRun(narrative, startingNodes) {
         window.pipelineData = {
             job_id: null,
             narrative: narrative,
             status: 'queued',
-            progress: { stage: 'queued', processed: 0, total: 5000, percent: 0 },
+            progress: { stage: 'queued', processed: 0, total: startingNodes, percent: 0 },
             stats: { impressions: 0, likes: 0, dislikes: 0, shares: 0, comments: 0, nothing: 0 },
             reaction_bar: { liked: 0, disliked: 0, shared: 0, comment: 0, none: 100 },
             chart: {
@@ -78,7 +86,7 @@
                 scroll_messages: [
                     'Switching from placeholder UI to backend data.',
                     'Loading the embedding and predictor stack.',
-                    'Charts will fill in as batches complete.'
+                    'Charts will fill in as propagation continues.'
                 ],
                 paragraphs: [
                     'The site is now waiting on the backend simulation rather than static JSON.',
@@ -196,7 +204,8 @@
     async function startBackendSimulation(narrative, options) {
         clearLiveConnection();
         window.liveBackendRunActive = true;
-        resetPipelineDataForRun(narrative);
+        const startingNodes = getStartingNodes();
+        resetPipelineDataForRun(narrative, startingNodes);
         applySnapshot(window.pipelineData);
 
         const response = await fetch('/api/simulate', {
@@ -204,6 +213,8 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 narrative: narrative,
+                audience_description: audienceDescriptionInput ? (audienceDescriptionInput.value || '').trim() : '',
+                starting_nodes: startingNodes,
                 seed: options && options.seed != null ? options.seed : null
             })
         });
