@@ -18,6 +18,7 @@
     let eventSource = null;
     let networkRenderTimer = null;
     let act3ShownByLiveUpdates = false;
+    const FIRST_DASHBOARD_THRESHOLD = 100;
     window.liveBackendRunActive = false;
 
     function formatNumber(value) {
@@ -94,6 +95,8 @@
         const analysis = snapshot.analysis || {};
         const stats = snapshot.stats || {};
         const rxn = snapshot.reaction_bar || {};
+        const progress = snapshot.progress || {};
+        const processed = Number(progress.processed || 0);
 
         if (typeof status !== 'undefined' && analysis.globe_status) {
             status.classList.add('visible');
@@ -136,13 +139,19 @@
             drawBeliefChart();
         }
 
-        if ((snapshot.status === 'completed' || snapshot.status === 'error') && typeof renderNetworkGraph === 'function') {
-            scheduleNetworkRender();
-        }
+        const shouldRevealDashboard = (
+            snapshot.status === 'completed'
+            || snapshot.status === 'error'
+            || processed >= FIRST_DASHBOARD_THRESHOLD
+        );
 
-        if ((snapshot.status === 'completed' || snapshot.status === 'error') && !act3ShownByLiveUpdates && typeof showAct3 === 'function') {
+        if (shouldRevealDashboard && !act3ShownByLiveUpdates && typeof showAct3 === 'function') {
             showAct3();
             act3ShownByLiveUpdates = true;
+        }
+
+        if ((snapshot.status === 'completed' || snapshot.status === 'error') && typeof renderNetworkGraph === 'function') {
+            scheduleNetworkRender();
         }
 
         if (snapshot.status === 'completed' || snapshot.status === 'error') {

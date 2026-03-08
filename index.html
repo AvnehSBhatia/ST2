@@ -2619,11 +2619,17 @@
                 // Use pipeline data: 2D PCA coords from kmean_graph, edges from shares
                 const gNodes = graph.nodes;
                 const gLinks = graph.links || [];
+                const depthJitter = (id) => {
+                    const seeded = Math.sin((Number(id) + 1) * 12.9898) * 43758.5453;
+                    return (seeded - Math.floor(seeded) - 0.5) * 4;
+                };
                 for (let i = 0; i < gNodes.length; i++) {
                     const n = gNodes[i];
                     const x = (n.x || 0) * scale;
-                    const z = (n.y || 0) * scale;
-                    const y = (Math.random() - 0.5) * 20;
+                    const y = (n.y || 0) * scale;
+                    // Keep the kmean_graph.py matplotlib spacing intact; use only a tiny
+                    // deterministic depth jitter so nodes don't z-fight in a single plane.
+                    const z = depthJitter(n.id);
                     const pos = new THREE.Vector3(x, y, z);
                     const reaction = n.display_action || n.action || 'neutral';
                     const shared = n.shared === true;
