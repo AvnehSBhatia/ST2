@@ -2616,21 +2616,29 @@
             const scale = 55;
 
             if (usePipelineGraph) {
-                // Use pipeline data: 2D PCA coords from kmean_graph, edges from shares
+                // Use a deterministic random layout for readability while preserving
+                // actual share edges from the pipeline data.
                 const gNodes = graph.nodes;
                 const gLinks = graph.links || [];
-                const depthJitter = (id) => {
-                    const seeded = Math.sin((Number(id) + 1) * 12.9898) * 43758.5453;
-                    return (seeded - Math.floor(seeded) - 0.5) * 4;
+                const seededRand = (seed) => {
+                    const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+                    return x - Math.floor(x);
+                };
+                const randomGraphPosition = (id) => {
+                    const base = Number(id) + 1;
+                    const angle = seededRand(base) * Math.PI * 2;
+                    const radius = 40 + Math.pow(seededRand(base * 3.1), 0.78) * 260;
+                    const lift = (seededRand(base * 5.7) - 0.5) * 110;
+                    const drift = (seededRand(base * 7.9) - 0.5) * 30;
+                    return new THREE.Vector3(
+                        Math.cos(angle) * radius + drift,
+                        lift,
+                        Math.sin(angle) * radius
+                    );
                 };
                 for (let i = 0; i < gNodes.length; i++) {
                     const n = gNodes[i];
-                    const x = (n.x || 0) * scale;
-                    const y = (n.y || 0) * scale;
-                    // Keep the kmean_graph.py matplotlib spacing intact; use only a tiny
-                    // deterministic depth jitter so nodes don't z-fight in a single plane.
-                    const z = depthJitter(n.id);
-                    const pos = new THREE.Vector3(x, y, z);
+                    const pos = randomGraphPosition(n.id);
                     const reaction = n.display_action || n.action || 'neutral';
                     const shared = n.shared === true;
                     const size = shared ? 2.5 : 1.2;

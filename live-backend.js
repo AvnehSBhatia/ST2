@@ -18,7 +18,7 @@
     let eventSource = null;
     let networkRenderTimer = null;
     let act3ShownByLiveUpdates = false;
-    const FIRST_DASHBOARD_THRESHOLD = 100;
+    const FIRST_DASHBOARD_THRESHOLD = 500;
     window.liveBackendRunActive = false;
 
     function formatNumber(value) {
