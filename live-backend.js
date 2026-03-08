@@ -53,7 +53,7 @@
     function getStartingNodes() {
         const raw = startingNodesInput ? Number(startingNodesInput.value) : 500;
         if (!Number.isFinite(raw)) return 500;
-        return Math.max(1, Math.min(5000, Math.round(raw)));
+        return Math.max(1, Math.min(100000, Math.round(raw)));
     }
 
     function resetPipelineDataForRun(narrative, startingNodes) {
