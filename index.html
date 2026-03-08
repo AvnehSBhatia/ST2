@@ -1724,7 +1724,7 @@
         <div class="logo-mark"><span class="s">SWARM</span></div>
         <h1 class="act1-headline">Drop a narrative<br />into the network.</h1>
         <p class="act1-sub">Paste an ad campaign, political speech, or video transcript. Watch it propagate through
-            100,000 simulated minds.</p>
+            5,000 simulated minds.</p>
         <div class="textarea-wrap">
             <textarea id="narrative" placeholder="Paste your campaign, ad copy, or transcript here..."></textarea>
         </div>
@@ -1734,7 +1734,7 @@
         </div>
         <div class="sim-config-row">
             <label for="starting-nodes">Starting Nodes</label>
-            <input id="starting-nodes" type="number" min="1" max="100000" step="1" value="500" />
+            <input id="starting-nodes" type="number" min="1" max="5000" step="1" value="500" />
         </div>
 
         <!-- File Upload -->
@@ -2471,7 +2471,7 @@
             geo.attributes.color.needsUpdate = true;
 
             // status text
-            const selectedStartingNodes = Math.max(1, Math.min(100000, Math.round(Number((document.getElementById('starting-nodes') || {}).value || 500))));
+            const selectedStartingNodes = Math.max(1, Math.min(5000, Math.round(Number((document.getElementById('starting-nodes') || {}).value || 500))));
             const msgs = [
                 'INJECTING NARRATIVE INTO NETWORK...',
                 `SWARM: SEEDING ${selectedStartingNodes.toLocaleString()} INITIAL AGENTS...`,

@@ -52,7 +52,7 @@ class AgentResult:
 
 # Paths (same as rest of project)
 HYBRID_DATASET_PATH = Path("hybrid_review_dataset.json")
-NUM_AGENTS = 100000
+NUM_AGENTS = 5000
 
 # Default media shown to the initial 10% (reel/post content)
 DEFAULT_MEDIA = (
